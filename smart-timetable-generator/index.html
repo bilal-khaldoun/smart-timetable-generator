@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Timetable Generator</title>
+
+<style>
+    body{ font-family: Arial, sans-serif; background:#f4f6f9; margin:0; padding:30px; }
+    .container{ max-width:1000px; margin:auto; background:white; padding:25px; border-radius:12px; box-shadow:0 0 15px rgba(0,0,0,0.1); }
+    h1{ text-align:center; color:#2c3e50; }
+    .form-group{ margin-bottom:15px; }
+    label{ display:block; margin-bottom:5px; font-weight:bold; }
+    input, select{ width:100%; padding:10px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; }
+    button{ width:100%; padding:12px; background:#3498db; color:white; border:none; border-radius:6px; cursor:pointer; font-size:16px; }
+    button:hover{ background:#2980b9; }
+    table{ width:100%; border-collapse:collapse; margin-top:20px; }
+    th,td{ border:1px solid #ddd; padding:10px; text-align:center; }
+    th{ background:#3498db; color:white; }
+    .loading{ text-align:center; color:#e67e22; font-weight:bold; }
+    .summary{ margin-top:20px; padding:12px; background:#eef7ff; border-radius:6px; font-weight:bold; }
+</style>
+
+</head>
+<body>
+
+<div class="container">
+    <h1>Smart Timetable Generator</h1>
+    <form id="scheduleForm">
+        <div class="form-group">
+            <label>University ID</label>
+            <input type="text" id="studentId" placeholder="Enter University ID" required>
+        </div>
+
+        <div class="form-group">
+            <label>Major</label>
+            <select id="major" required>
+                <option value="Computer Science">Computer Science</option>
+                <option value="Cyber Security">Cyber Security</option>
+                <option value="Artificial Intelligence">Artificial Intelligence</option>
+                <option value="Software Engineering">Software Engineering</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>Desired Hours</label>
+            <select id="hours" required>
+                <option value="1">1 Hour</option>
+                <option value="2">2 Hours</option>
+                <option value="3" selected>3 Hours</option> <option value="4">4 Hours</option>
+                <option value="5">5 Hours</option>
+                <option value="6">6 Hours</option>
+                <option value="7">7 Hours</option>
+                <option value="8">8 Hours</option>
+                <option value="9">9 Hours</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>Schedule Pattern</label>
+            <input type="text" value="Sun - Mon - Tue - Wed" readonly style="background-color: #e9ecef;">
+        </div>
+
+        <button type="submit">Generate Schedule</button>
+    </form>
+
+    <div id="result"></div>
+</div>
+
+<script>
+const WEBHOOK_URL = "https://bilal2311.app.n8n.cloud/webhook-test/generate-schedule";
+
+document.getElementById("scheduleForm").addEventListener("submit", async function(e){
+    e.preventDefault();
+
+    const data = {
+        studentId: document.getElementById("studentId").value.trim(),
+        major: document.getElementById("major").value,
+        desiredHours: Number(document.getElementById("hours").value), // تحويلها لرقم مباشرة عند الإرسال
+        pattern: "Sun-Mon-Tue-Wed"
+    };
+
+    document.getElementById("result").innerHTML = '<p class="loading">Generating schedule...</p>';
+
+    try {
+        const response = await fetch(WEBHOOK_URL, {
+            method: "POST",
+            headers: { "Content-Type":"application/json" },
+            body: JSON.stringify(data)
+        });
+
+        const result = await response.json();
+        console.log("Data from n8n:", result);
+        
+        let coursesArray = [];
+
+        // قراءة البكج المجمع الجديد schedule
+        if (result && result.schedule && Array.isArray(result.schedule)) {
+            coursesArray = result.schedule;
+        } else if (Array.isArray(result) && result[0] && result[0].json && result[0].json.schedule) {
+            coursesArray = result[0].json.schedule;
+        } else if (Array.isArray(result)) {
+            coursesArray = result;
+        }
+
+        let totalHours = 0;
+        let tableRowsHtml = "";
+
+        if (coursesArray.length > 0) {
+            coursesArray.forEach(item => {
+                const course = item.json ? item.json : item;
+                
+                if (course) {
+                    const creditHours = Number(course.CreditHours || 3);
+                    totalHours += creditHours;
+
+                    tableRowsHtml += `<tr>
+                        <td>${course.CourseID || "-"}</td>
+                        <td>${course.CourseName || "-"}</td>
+                        <td>${course.Days || "-"}</td>
+                        <td>${course.StartTime || "-"}</td>
+                        <td>${course.EndTime || "-"}</td>
+                        <td>${creditHours}</td>
+                    </tr>`;
+                }
+            });
+        }
+
+        if (tableRowsHtml === "") {
+            document.getElementById("result").innerHTML = `
+                <div class="summary">Total Hours: 0</div>
+                <p style="text-align:center; padding: 20px; color: #7f8c8d;">لم يتم العثور على مواد متاحة للمواصفات المدخلة.</p>
+            `;
+            return;
+        }
+
+        let finalHtml = `<div class="summary">Total Hours: ${totalHours}</div>`;
+        finalHtml += `<table>
+            <tr>
+                <th>Course ID</th>
+                <th>Course Name</th>
+                <th>Days</th>
+                <th>Start Time</th>
+                <th>End Time</th>
+                <th>Credit Hours</th>
+            </tr>
+            ${tableRowsHtml}
+        </table>`;
+
+        document.getElementById("result").innerHTML = finalHtml;
+    }
+    catch(error){
+        console.error("Fetch Error:", error);
+        document.getElementById("result").innerHTML = '<p style="color:red;text-align:center;">Failed to generate schedule.</p>';
+    }
+});
+</script>
+
+</body>
+</html>

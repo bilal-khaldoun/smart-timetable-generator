@@ -1,0 +1,245 @@
+{
+  "name": "n8n",
+  "nodes": [
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1kpNzSSBr48Vb82WP8D2hYNF3b9F1l1yIdWl4vd-5x7I/edit?gid=1746700803#gid=1746700803",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1746700803,
+          "mode": "list",
+          "cachedResultName": "AllCourses",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1kpNzSSBr48Vb82WP8D2hYNF3b9F1l1yIdWl4vd-5x7I/edit#gid=1746700803"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -944,
+        -96
+      ],
+      "id": "593aa995-90e5-425c-b759-099b45a37546",
+      "name": "AllCourses",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "AiXqCqC1XNTZSNMh",
+          "name": "Google Sheets OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1zZxWyUeNPFw9oi3a3Q0tPnY92b8AYE1i5cGAdfxHpXk/edit?gid=1672616466#gid=1672616466",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1672616466,
+          "mode": "list",
+          "cachedResultName": "FinishedCourses",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1zZxWyUeNPFw9oi3a3Q0tPnY92b8AYE1i5cGAdfxHpXk/edit#gid=1672616466"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -944,
+        224
+      ],
+      "id": "dceaff80-aee3-4c4a-9281-220f12178ec4",
+      "name": "FinishedCourses",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "AiXqCqC1XNTZSNMh",
+          "name": "Google Sheets OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -640,
+        48
+      ],
+      "id": "6ae4fd12-c02b-4deb-aae0-bc8172706324",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json;\n\nreturn [\n  {\n    json: {\n      studentId: String(body.studentId),\n      major: String(body.major),\n      desiredHours: Number(body.desiredHours),\n      pattern: String(body.pattern)\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1248,
+        80
+      ],
+      "id": "06c0cdff-9879-46c2-af94-cc3706f22f9b",
+      "name": "Student Input"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. جلب بيانات الطالب المدخلة من نود الإدخال المباشر\nconst studentInput = $('Student Input').first().json;\nconst studentId = String(studentInput.studentId).trim();\nconst major = String(studentInput.major).trim();\n\nconst finishedIds = new Set();\nconst allCourses = [];\n\n// 2. المرور على جميع العناصر القادمة من نود الـ Merge وتوزيعها بدقة\nfor (const item of items) {\n  const data = item.json;\n\n  // إذا كان العنصر يحتوي على StudentID، فهو بالتأكيد من جدول المواد المنجزة (Finished Courses)\n  if (data.StudentID !== undefined && data.StudentID !== null) {\n    if (String(data.StudentID).trim() === studentId) {\n      finishedIds.add(String(data.CourseID).trim());\n    }\n  } \n  // إذا كان العنصر يحتوي على التخصص وليس فيه StudentID، فهو من جدول المواد الكلي (All Courses)\n  else if (data.CourseID && data.Major) {\n    allCourses.push(data);\n  }\n}\n\n// 3. فلترة المواد المتبقية بناءً على التخصص، المواد المنجزة، والمتطلب السابق\nconst remaining = allCourses.filter(course => {\n  const courseId = String(course.CourseID).trim();\n  const courseMajor = String(course.Major).trim();\n\n  // شرط 1: يجب أن تكون المادة تابعة لتخصص الطالب\n  if (courseMajor !== major) {\n    return false;\n  }\n\n  // شرط 2: إذا كان الطالب قد أنهى المادة سابقاً، يتم استبعادها\n  if (finishedIds.has(courseId)) {\n    return false;\n  }\n\n  // شرط 3: التحقق من المتطلب السابق (Prerequisite)\n  const prereq = String(course.PrerequisiteID || \"\").trim();\n\n  // إذا لم يكن هناك متطلب سابق، المادة متاحة للتسجيل\n  if (prereq === \"\" || prereq.toLowerCase() === \"none\" || prereq === \"-\") {\n    return true;\n  }\n\n  // إذا كان هناك متطلب، يجب أن يكون الطالب قد أنجزه (موجود في finishedIds)\n  return finishedIds.has(prereq);\n});\n\n// 4. إعادة النتائج بالصيغة المتوافقة مع n8n\nreturn remaining.map(course => ({\n  json: course\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        48
+      ],
+      "id": "50a5e9b1-3a13-438f-8562-b4cb80fd19fe",
+      "name": "Remaining Courses"
+    },
+    {
+      "parameters": {
+        "jsCode": "const desiredHours = Number(\n  $('Student Input').first().json.desiredHours\n);\n\nconst selectedPattern =\n  $('Student Input').first().json.pattern;\n\n// ==================== إعدادات الفلترة للكورسات المخلّصة ====================\n// انتبه هنا: غير هذه المسميات لتطابق تماماً الأسماء الموجودة بالشيت عندك\nconst STATUS_FIELD_NAME = \"Status\"; // اسم العمود اللي بحدد حالة المادة (مثلاً Status أو Type أو Passed)\nconst COMPLETED_VALUE = \"Completed\"; // القيمة اللي بتدل إن المادة مخلصة (مثلاً Completed أو Passed أو نعم)\n// =========================================================================\n\n// 1. تصفية الكورسات: استثناء المواد المخلّصة وبناءً على الأيام المحددة\nlet courses = items\n  .map(item => item.json)\n  .filter(course => {\n    \n    // منع الكورسات التي اجتازها الطالب من الدخول في الجدول الجديد\n    if (course[STATUS_FIELD_NAME] === COMPLETED_VALUE) {\n      return false;\n    }\n\n    // الفلترة بناءً على نمط الأيام المختار\n    if (\n      selectedPattern === \"Sunday-Tuesday-Thursday\" &&\n      course.Days !== \"Sunday, Tuesday, Thursday\"\n    ) {\n      return false;\n    }\n\n    if (\n      selectedPattern === \"Monday-Wednesday\" &&\n      course.Days !== \"Monday, Wednesday\"\n    ) {\n      return false;\n    }\n\n    return true;\n  });\n\n// 2. خلط الكورسات المتبقية (المتاحة للتسجيل فقط) عشوائياً\nfor (let i = courses.length - 1; i > 0; i--) {\n  const j = Math.floor(Math.random() * (i + 1));\n  [courses[i], courses[j]] = [courses[j], courses[i]];\n}\n\nconst targetCourses = desiredHours / 3;\n\n// دالة تحويل الوقت إلى دقائق\nfunction toMinutes(time) {\n  const [h, m] = String(time)\n    .split(\":\")\n    .map(Number);\n  return h * 60 + m;\n}\n\n// دالة فحص التعارض\nfunction hasConflict(course1, course2) {\n  const start1 = toMinutes(course1.StartTime);\n  const end1 = toMinutes(course1.EndTime);\n  const start2 = toMinutes(course2.StartTime);\n  const end2 = toMinutes(course2.EndTime);\n\n  return start1 < end2 && end1 > start2;\n}\n\nlet bestSchedule = [];\n\n// 3. خوارزمية البحث الذكي عن جدول بدون تعارض\nfunction findBestSchedule(index, currentSchedule) {\n  if (currentSchedule.length === targetCourses) {\n    bestSchedule = [...currentSchedule];\n    return true; \n  }\n\n  if (index >= courses.length) {\n    if (currentSchedule.length > bestSchedule.length) {\n      bestSchedule = [...currentSchedule];\n    }\n    return false;\n  }\n\n  const currentCourse = courses[index];\n  let conflict = false;\n\n  for (const selected of currentSchedule) {\n    if (hasConflict(currentCourse, selected)) {\n      conflict = true;\n      break;\n    }\n  }\n\n  if (!conflict) {\n    currentSchedule.push(currentCourse);\n    const foundPerfect = findBestSchedule(index + 1, currentSchedule);\n    if (foundPerfect) return true;\n    currentSchedule.pop(); \n  }\n\n  return findBestSchedule(index + 1, currentSchedule);\n}\n\n// تشغيل الخوارزمية\nfindBestSchedule(0, []);\n\n// 4. المخرجات النهائية لـ n8n بنفس المسميات الأصلية\nreturn [\n  {\n    json: {\n      totalHours: bestSchedule.length * 3,\n      schedule: bestSchedule\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -208,
+        48
+      ],
+      "id": "2a8d245e-c352-4463-baed-355a8af5bd8e",
+      "name": "Generate Schedule"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "generate-schedule",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1440,
+        80
+      ],
+      "id": "cd9e81a4-3166-43f5-8dc1-290ede76c84f",
+      "name": "Webhook",
+      "webhookId": "622333f9-7a33-4e59-8cdb-545eeb04768b"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -16,
+        48
+      ],
+      "id": "c185dbd7-0ca2-4f91-a34f-b185fb9efc35",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "AllCourses": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FinishedCourses": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Remaining Courses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Student Input": {
+      "main": [
+        [
+          {
+            "node": "AllCourses",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "FinishedCourses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remaining Courses": {
+      "main": [
+        [
+          {
+            "node": "Generate Schedule",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Student Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Schedule": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "651d6ae6-b7bc-48f5-8298-3515c09e8213",
+  "meta": {
+    "instanceId": "dc2964806dd9a67b7df09e298d89fb33707535140167c2f373f1f767c6ab0bc0"
+  },
+  "id": "CYjHdcizwqaDnf7W",
+  "tags": []
+}
